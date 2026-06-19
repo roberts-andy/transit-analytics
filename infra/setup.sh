@@ -240,6 +240,42 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Step 6: Upload config.py to Lakehouse Files
+# ---------------------------------------------------------------------------
+echo ""
+echo "[8/8] Uploading config.py to lakehouse Files/..."
+FABRIC_TOKEN=$(az account get-access-token --resource https://api.fabric.microsoft.com --query accessToken -o tsv)
+
+# Upload via OneLake DFS endpoint
+CONFIG_PATH="fabric-assets/config.py"
+ONELAKE_URL="https://onelake.dfs.fabric.microsoft.com/$WORKSPACE_ID/$LAKEHOUSE_ID/Files/config.py"
+
+# Create the file
+curl -s -X PUT \
+  -H "Authorization: Bearer $FABRIC_TOKEN" \
+  -H "x-ms-version: 2021-06-08" \
+  -H "Content-Length: 0" \
+  "$ONELAKE_URL?resource=file" > /dev/null
+
+# Upload content
+CONFIG_CONTENT=$(cat "$CONFIG_PATH")
+curl -s -X PATCH \
+  -H "Authorization: Bearer $FABRIC_TOKEN" \
+  -H "x-ms-version: 2021-06-08" \
+  -H "Content-Type: application/octet-stream" \
+  -H "x-ms-blob-type: BlockBlob" \
+  --data-binary "@$CONFIG_PATH" \
+  "$ONELAKE_URL?position=0&action=append" > /dev/null
+
+FILE_SIZE=$(wc -c < "$CONFIG_PATH" | tr -d ' ')
+curl -s -X PATCH \
+  -H "Authorization: Bearer $FABRIC_TOKEN" \
+  -H "x-ms-version: 2021-06-08" \
+  "$ONELAKE_URL?position=$FILE_SIZE&action=flush" > /dev/null
+
+echo "  config.py uploaded to lakehouse Files/"
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 echo ""
