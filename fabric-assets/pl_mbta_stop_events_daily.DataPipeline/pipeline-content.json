@@ -13,7 +13,7 @@
           "secureInput": false
         },
         "typeProperties": {
-          "notebookId": "a1b2c3d4-e5f6-7890-abcd-ef1234567891",
+          "notebookId": "b2c3d4e5-f6a7-8901-bcde-f23456789012",
           "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
           "notebook": {
             "referenceName": "nb_mbta_stop_events_daily",
