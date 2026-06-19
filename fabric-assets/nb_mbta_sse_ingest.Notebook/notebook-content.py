@@ -35,19 +35,30 @@
 
 # CELL ********************
 
-# Import shared configuration
-import sys
-sys.path.insert(0, "/lakehouse/default/Files")
-from config import (
-    KEYVAULT_URL, SECRET_MBTA_API_KEY, MBTA_API_BASE,
-    MBTA_SSE_ENDPOINTS, MBTA_SSE_FLUSH_INTERVAL_SECONDS,
-    MBTA_SSE_MAX_BACKOFF_SECONDS, MBTA_SSE_KEEPALIVE_TIMEOUT_SECONDS
-)
+# Configuration from Fabric Variable Library (transit-analytics-config)
+config = notebookutils.variableLibrary.getLibrary("transit-analytics-config")
+KEYVAULT_URL = config["keyvault_url"]
+SECRET_MBTA_API_KEY = config["secret_mbta_api_key"]
+MBTA_API_BASE = config["mbta_api_base"]
+FLUSH_INTERVAL_SECONDS = int(config["mbta_sse_flush_interval_seconds"])
+MAX_BACKOFF_SECONDS = int(config["mbta_sse_max_backoff_seconds"])
 
-# Build endpoint config with table name mapping (table = endpoint name)
-ENDPOINTS = {name: {**cfg, "table": name, "id_field": "id"} for name, cfg in MBTA_SSE_ENDPOINTS.items()}
-FLUSH_INTERVAL_SECONDS = MBTA_SSE_FLUSH_INTERVAL_SECONDS
-MAX_BACKOFF_SECONDS = MBTA_SSE_MAX_BACKOFF_SECONDS
+# SSE-capable endpoints — each maps to a bronze.mbta.* Delta table
+ENDPOINTS = {
+    "routes":          {"path": "/routes",          "table": "routes",          "id_field": "id"},
+    "stops":           {"path": "/stops",           "table": "stops",           "id_field": "id"},
+    "lines":           {"path": "/lines",           "table": "lines",           "id_field": "id"},
+    "shapes":          {"path": "/shapes",          "table": "shapes",          "id_field": "id"},
+    "route_patterns":  {"path": "/route_patterns",  "table": "route_patterns",  "id_field": "id"},
+    "facilities":      {"path": "/facilities",      "table": "facilities",      "id_field": "id"},
+    "services":        {"path": "/services",        "table": "services",        "id_field": "id"},
+    "schedules":       {"path": "/schedules",       "table": "schedules",       "id_field": "id"},
+    "predictions":     {"path": "/predictions",     "table": "predictions",     "id_field": "id"},
+    "vehicles":        {"path": "/vehicles",        "table": "vehicles",        "id_field": "id"},
+    "alerts":          {"path": "/alerts",           "table": "alerts",          "id_field": "id"},
+    "trips":           {"path": "/trips",           "table": "trips",           "id_field": "id"},
+    "live_facilities": {"path": "/live_facilities", "table": "live_facilities", "id_field": "id"},
+}
 
 # METADATA ********************
 

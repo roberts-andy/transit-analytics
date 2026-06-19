@@ -240,40 +240,56 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 6: Upload config.py to Lakehouse Files
+# Step 6: Update Variable Library with Key Vault URL
 # ---------------------------------------------------------------------------
 echo ""
-echo "[8/8] Uploading config.py to lakehouse Files/..."
+echo "[8/8] Updating variable library with your Key Vault URL..."
 FABRIC_TOKEN=$(az account get-access-token --resource https://api.fabric.microsoft.com --query accessToken -o tsv)
+FABRIC_HEADERS="Authorization: Bearer $FABRIC_TOKEN"
 
-# Upload via OneLake DFS endpoint
-CONFIG_PATH="fabric-assets/config.py"
-ONELAKE_URL="https://onelake.dfs.fabric.microsoft.com/$WORKSPACE_ID/$LAKEHOUSE_ID/Files/config.py"
+# Find the variable library item (created from git sync)
+VARLIB_ID=$(curl -s -H "$FABRIC_HEADERS" \
+  "https://api.fabric.microsoft.com/v1/workspaces/$WORKSPACE_ID/items?type=VariableLibrary" | \
+  python3 -c "import sys,json; items=json.load(sys.stdin)['value']; print(items[0]['id'] if items else '')")
 
-# Create the file
-curl -s -X PUT \
-  -H "Authorization: Bearer $FABRIC_TOKEN" \
-  -H "x-ms-version: 2021-06-08" \
-  -H "Content-Length: 0" \
-  "$ONELAKE_URL?resource=file" > /dev/null
+if [ -n "$VARLIB_ID" ]; then
+  echo "  Variable Library ID: $VARLIB_ID"
+  echo "  Updating keyvault_url to: https://$KEYVAULT_NAME.vault.azure.net/"
 
-# Upload content
-CONFIG_CONTENT=$(cat "$CONFIG_PATH")
-curl -s -X PATCH \
-  -H "Authorization: Bearer $FABRIC_TOKEN" \
-  -H "x-ms-version: 2021-06-08" \
-  -H "Content-Type: application/octet-stream" \
-  -H "x-ms-blob-type: BlockBlob" \
-  --data-binary "@$CONFIG_PATH" \
-  "$ONELAKE_URL?position=0&action=append" > /dev/null
+  # Build variables.json with user-specific Key Vault URL and update via definition
+  VARS_JSON=$(python3 -c "
+import json, base64
+variables = {
+    '\$schema': 'https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/variables/1.0.0/schema.json',
+    'variables': [
+        {'name': 'keyvault_url', 'type': 'String', 'value': 'https://$KEYVAULT_NAME.vault.azure.net/'},
+        {'name': 'secret_mbta_api_key', 'type': 'String', 'value': 'mbta-api-key'},
+        {'name': 'secret_wmata_api_key', 'type': 'String', 'value': 'wmata-api-key'},
+        {'name': 'secret_weather_api_key', 'type': 'String', 'value': 'weather-api-key'},
+        {'name': 'mbta_api_base', 'type': 'String', 'value': 'https://api-v3.mbta.com'},
+        {'name': 'mbta_gtfs_static_url', 'type': 'String', 'value': 'https://cdn.mbta.com/MBTA_GTFS.zip'},
+        {'name': 'mbta_api_rate_limit_per_minute', 'type': 'String', 'value': '1000'},
+        {'name': 'mbta_api_timeout_seconds', 'type': 'String', 'value': '30'},
+        {'name': 'mbta_sse_keepalive_timeout_seconds', 'type': 'String', 'value': '90'},
+        {'name': 'mbta_sse_max_backoff_seconds', 'type': 'String', 'value': '300'},
+        {'name': 'mbta_sse_flush_interval_seconds', 'type': 'String', 'value': '30'},
+        {'name': 'wmata_api_base', 'type': 'String', 'value': 'https://api.wmata.com'},
+    ]
+}
+payload = base64.b64encode(json.dumps(variables).encode()).decode()
+body = json.dumps({'definition': {'parts': [{'path': 'variables.json', 'payload': payload, 'payloadType': 'InlineBase64'}]}})
+print(body)
+")
 
-FILE_SIZE=$(wc -c < "$CONFIG_PATH" | tr -d ' ')
-curl -s -X PATCH \
-  -H "Authorization: Bearer $FABRIC_TOKEN" \
-  -H "x-ms-version: 2021-06-08" \
-  "$ONELAKE_URL?position=$FILE_SIZE&action=flush" > /dev/null
+  curl -s -X POST \
+    -H "$FABRIC_HEADERS" -H "Content-Type: application/json" \
+    -d "$VARS_JSON" \
+    "https://api.fabric.microsoft.com/v1/workspaces/$WORKSPACE_ID/items/$VARLIB_ID/updateDefinition" > /dev/null
 
-echo "  config.py uploaded to lakehouse Files/"
+  echo "  Variable library updated."
+else
+  echo "  WARNING: Variable library not found. It will be created on git sync."
+fi
 
 # ---------------------------------------------------------------------------
 # Done

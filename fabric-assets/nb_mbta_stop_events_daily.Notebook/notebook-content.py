@@ -43,10 +43,12 @@ import time
 
 spark = SparkSession.builder.getOrCreate()
 
-# Import shared configuration
-import sys
-sys.path.insert(0, "/lakehouse/default/Files")
-from config import KEYVAULT_URL, SECRET_MBTA_API_KEY, MBTA_API_BASE, MBTA_API_TIMEOUT_SECONDS
+# Configuration from Fabric Variable Library (transit-analytics-config)
+config = notebookutils.variableLibrary.getLibrary("transit-analytics-config")
+KEYVAULT_URL = config["keyvault_url"]
+SECRET_MBTA_API_KEY = config["secret_mbta_api_key"]
+MBTA_API_BASE = config["mbta_api_base"]
+MBTA_API_TIMEOUT_SECONDS = int(config["mbta_api_timeout_seconds"])
 
 TABLE_NAME = "bronze.mbta.stop_events"
 

@@ -1,4 +1,65 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/variables/1.0.0/schema.json",
-  "variables": []
+  "variables": [
+    {
+      "name": "keyvault_url",
+      "type": "String",
+      "value": "https://kvtransitdemo-f70cfb6a.vault.azure.net/"
+    },
+    {
+      "name": "secret_mbta_api_key",
+      "type": "String",
+      "value": "mbta-api-key"
+    },
+    {
+      "name": "secret_wmata_api_key",
+      "type": "String",
+      "value": "wmata-api-key"
+    },
+    {
+      "name": "secret_weather_api_key",
+      "type": "String",
+      "value": "weather-api-key"
+    },
+    {
+      "name": "mbta_api_base",
+      "type": "String",
+      "value": "https://api-v3.mbta.com"
+    },
+    {
+      "name": "mbta_gtfs_static_url",
+      "type": "String",
+      "value": "https://cdn.mbta.com/MBTA_GTFS.zip"
+    },
+    {
+      "name": "mbta_api_rate_limit_per_minute",
+      "type": "String",
+      "value": "1000"
+    },
+    {
+      "name": "mbta_api_timeout_seconds",
+      "type": "String",
+      "value": "30"
+    },
+    {
+      "name": "mbta_sse_keepalive_timeout_seconds",
+      "type": "String",
+      "value": "90"
+    },
+    {
+      "name": "mbta_sse_max_backoff_seconds",
+      "type": "String",
+      "value": "300"
+    },
+    {
+      "name": "mbta_sse_flush_interval_seconds",
+      "type": "String",
+      "value": "30"
+    },
+    {
+      "name": "wmata_api_base",
+      "type": "String",
+      "value": "https://api.wmata.com"
+    }
+  ]
 }
