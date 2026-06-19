@@ -1,0 +1,29 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "name": "Run Stop Events Ingestion",
+        "type": "TridentNotebook",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 60,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "notebookId": "a1b2c3d4-e5f6-7890-abcd-ef1234567891",
+          "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
+          "notebook": {
+            "referenceName": "nb_mbta_stop_events_daily",
+            "type": "NotebookReference"
+          },
+          "parameters": {}
+        }
+      }
+    ],
+    "annotations": [],
+    "description": "Daily batch pipeline that fetches MBTA stop_events (actual arrivals/departures) for the previous service day and loads them into bronze.mbta.stop_events."
+  }
+}
