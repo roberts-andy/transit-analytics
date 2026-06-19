@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "VariableLibrary",
+    "displayName": "transit-analytics-config"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "b821fa57-4a40-98c1-4a49-ded6f456fad3"
+  }
+}
