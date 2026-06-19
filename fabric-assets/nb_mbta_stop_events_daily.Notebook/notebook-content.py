@@ -43,10 +43,11 @@ import time
 
 spark = SparkSession.builder.getOrCreate()
 
-# Configuration
-KEYVAULT_URL = "https://kvtransitdemo-f70cfb6a.vault.azure.net/"
-KEYVAULT_SECRET_NAME = "mbta-api-key"
-MBTA_API_BASE = "https://api-v3.mbta.com"
+# Import shared configuration
+import sys
+sys.path.insert(0, "/lakehouse/default/Files")
+from config import KEYVAULT_URL, SECRET_MBTA_API_KEY, MBTA_API_BASE, MBTA_API_TIMEOUT_SECONDS
+
 TABLE_NAME = "bronze.mbta.stop_events"
 
 # METADATA ********************
@@ -62,7 +63,7 @@ TABLE_NAME = "bronze.mbta.stop_events"
 
 # CELL ********************
 
-api_key = mssparkutils.credentials.getSecret(KEYVAULT_URL, KEYVAULT_SECRET_NAME)
+api_key = mssparkutils.credentials.getSecret(KEYVAULT_URL, SECRET_MBTA_API_KEY)
 print(f"API key retrieved ({len(api_key)} chars)")
 
 # METADATA ********************
@@ -84,7 +85,7 @@ print(f"Target service date: {target_date}")
 
 # Get all active routes to iterate over
 headers = {"x-api-key": api_key, "Accept": "application/vnd.api+json"}
-response = requests.get(f"{MBTA_API_BASE}/routes", headers=headers, timeout=30)
+response = requests.get(f"{MBTA_API_BASE}/routes", headers=headers, timeout=MBTA_API_TIMEOUT_SECONDS)
 response.raise_for_status()
 routes_data = response.json()["data"]
 route_ids = [r["id"] for r in routes_data]
@@ -117,7 +118,7 @@ def fetch_stop_events_for_route(route_id: str, date: str) -> list:
     }
     
     while url:
-        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response = requests.get(url, headers=headers, params=params, timeout=MBTA_API_TIMEOUT_SECONDS)
         
         if response.status_code == 429:
             # Rate limited — wait and retry

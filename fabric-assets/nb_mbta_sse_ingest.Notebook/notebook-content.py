@@ -35,33 +35,19 @@
 
 # CELL ********************
 
-# Configuration — Endpoints and table mappings
-KEYVAULT_URL = "https://kvtransitdemo-f70cfb6a.vault.azure.net/"
-KEYVAULT_SECRET_NAME = "mbta-api-key"
-MBTA_API_BASE = "https://api-v3.mbta.com"
+# Import shared configuration
+import sys
+sys.path.insert(0, "/lakehouse/default/Files")
+from config import (
+    KEYVAULT_URL, SECRET_MBTA_API_KEY, MBTA_API_BASE,
+    MBTA_SSE_ENDPOINTS, MBTA_SSE_FLUSH_INTERVAL_SECONDS,
+    MBTA_SSE_MAX_BACKOFF_SECONDS, MBTA_SSE_KEEPALIVE_TIMEOUT_SECONDS
+)
 
-# All MBTA V3 API SSE endpoints and their target Delta table names
-ENDPOINTS = {
-    "routes":         {"path": "/routes",         "table": "routes",         "id_field": "id"},
-    "stops":          {"path": "/stops",          "table": "stops",          "id_field": "id"},
-    "lines":          {"path": "/lines",          "table": "lines",          "id_field": "id"},
-    "shapes":         {"path": "/shapes",         "table": "shapes",         "id_field": "id"},
-    "route_patterns": {"path": "/route_patterns", "table": "route_patterns", "id_field": "id"},
-    "facilities":     {"path": "/facilities",     "table": "facilities",     "id_field": "id"},
-    "services":       {"path": "/services",       "table": "services",       "id_field": "id"},
-    "schedules":      {"path": "/schedules",      "table": "schedules",      "id_field": "id"},
-    "predictions":    {"path": "/predictions",    "table": "predictions",    "id_field": "id"},
-    "vehicles":       {"path": "/vehicles",       "table": "vehicles",       "id_field": "id"},
-    "alerts":         {"path": "/alerts",         "table": "alerts",         "id_field": "id"},
-    "trips":          {"path": "/trips",          "table": "trips",          "id_field": "id"},
-    "live_facilities": {"path": "/live_facilities", "table": "live_facilities", "id_field": "id"},
-}
-
-# How often to flush buffered events to Delta (seconds)
-FLUSH_INTERVAL_SECONDS = 30
-
-# Max reconnect backoff (seconds)
-MAX_BACKOFF_SECONDS = 300
+# Build endpoint config with table name mapping (table = endpoint name)
+ENDPOINTS = {name: {**cfg, "table": name, "id_field": "id"} for name, cfg in MBTA_SSE_ENDPOINTS.items()}
+FLUSH_INTERVAL_SECONDS = MBTA_SSE_FLUSH_INTERVAL_SECONDS
+MAX_BACKOFF_SECONDS = MBTA_SSE_MAX_BACKOFF_SECONDS
 
 # METADATA ********************
 
@@ -76,7 +62,7 @@ MAX_BACKOFF_SECONDS = 300
 
 # CELL ********************
 
-api_key = mssparkutils.credentials.getSecret(KEYVAULT_URL, KEYVAULT_SECRET_NAME)
+api_key = mssparkutils.credentials.getSecret(KEYVAULT_URL, SECRET_MBTA_API_KEY)
 print(f"API key retrieved successfully ({len(api_key)} chars)")
 
 # METADATA ********************
