@@ -14,12 +14,7 @@
         },
         "typeProperties": {
           "notebookId": "715655f2-89fa-4a20-a641-338338e41e38",
-          "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
-          "notebook": {
-            "referenceName": "nb_mbta_stop_events_daily",
-            "type": "NotebookReference"
-          },
-          "parameters": {}
+          "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9"
         }
       }
     ],
