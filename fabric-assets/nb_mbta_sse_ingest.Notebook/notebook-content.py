@@ -8,6 +8,7 @@
 # META   },
 # META   "dependencies": {
 # META     "lakehouse": {
+# META       "default_lakehouse": "e7c516ba-df49-4dc6-9f32-299392d999c9",
 # META       "default_lakehouse_name": "bronze",
 # META       "default_lakehouse_workspace_id": "c030c477-6e50-4334-8fcb-fd032f8870b9",
 # META       "known_lakehouses": [
@@ -99,7 +100,7 @@ print("Schema bronze.mbta ready")
 
 # CELL ********************
 
-api_key = mssparkutils.credentials.getSecret(KEYVAULT_URL, SECRET_MBTA_API_KEY)
+api_key = notebookutils.credentials.getSecret(KEYVAULT_URL, SECRET_MBTA_API_KEY)
 print(f"API key retrieved successfully ({len(api_key)} chars)")
 
 # METADATA ********************
@@ -317,8 +318,62 @@ class EventBuffer:
                 print(f"[{datetime.now()}] ERROR flushing {table_name}: {e}")
                 traceback.print_exc()
     
+    def _flatten_entity(self, entity: dict) -> dict:
+        """Flatten a JSON:API entity into a flat dict for Delta storage."""
+        flat = {"id": entity.get("id"), "type": entity.get("type")}
+        
+        # Flatten attributes
+        for key, value in entity.get("attributes", {}).items():
+            if isinstance(value, (dict, list)):
+                flat[f"attr_{key}"] = json.dumps(value)
+            else:
+                flat[f"attr_{key}"] = value
+        
+        # Flatten relationships to IDs
+        for rel_name, rel_data in entity.get("relationships", {}).items():
+            rel_inner = rel_data.get("data")
+            if isinstance(rel_inner, dict):
+                flat[f"rel_{rel_name}_id"] = rel_inner.get("id")
+                flat[f"rel_{rel_name}_type"] = rel_inner.get("type")
+            elif isinstance(rel_inner, list):
+                flat[f"rel_{rel_name}_ids"] = json.dumps([r.get("id") for r in rel_inner])
+            # else: null relationship, skip
+        
+        # Metadata columns
+        flat["_ingested_at"] = datetime.now(timezone.utc).isoformat()
+        
+        return flat
+    
+    def _entities_to_df(self, entities: list):
+        """Convert a list of JSON:API entities to a Spark DataFrame.
+        All columns are materialized as STRING to avoid schema inference issues
+        when a column is entirely null or has mixed Python types."""
+        if not entities:
+            return None
+        flat_rows = [self._flatten_entity(e) for e in entities]
+        # Normalize to strings and build an all-string schema
+        field_names = sorted(flat_rows[0].keys())
+        schema = StructType([StructField(name, StringType(), True) for name in field_names])
+        rows = [
+            {name: ("" if row.get(name) is None else str(row.get(name))) for name in field_names}
+            for row in flat_rows
+        ]
+        return self.spark.createDataFrame(rows, schema=schema)
+    
+    def _ensure_table_exists(self, table_name: str, df):
+        """Create the Delta table if it doesn't exist yet.
+        In a Fabric Lakehouse, the database == lakehouse name (default),
+        so we only use schema.table here (e.g. mbta.routes)."""
+        full_table = f"mbta.{table_name}"
+        if not self.spark.catalog.tableExists(full_table):
+            print(f"[{datetime.now()}] Creating table {full_table}")
+            df.write.format("delta").mode("overwrite").saveAsTable(full_table)
+            return True
+        return False
+    
     def _flush_table(self, table_name: str, buf: dict):
-        full_table = f"bronze.mbta.{table_name}"
+        """Apply buffered events to a single Delta table."""
+        full_table = f"mbta.{table_name}"
         has_changes = buf["reset"] is not None or buf["adds"] or buf["updates"] or buf["removes"]
         if not has_changes:
             return
@@ -429,6 +484,9 @@ class SSEConsumerThread(threading.Thread):
                 print(f"[{datetime.now()}] ChunkedEncoding error on {self.endpoint_name}, reconnecting...")
             except requests.exceptions.Timeout:
                 print(f"[{datetime.now()}] Timeout on {self.endpoint_name}, reconnecting...")
+            except requests.exceptions.ChunkedEncodingError as e:
+                # Upstream closed the chunked connection unexpectedly; treat as transient and reconnect
+                print(f"[{datetime.now()}] Chunked encoding error on {self.endpoint_name}: {e}. Reconnecting...")
             except requests.exceptions.ConnectionError as e:
                 print(f"[{datetime.now()}] Connection error on {self.endpoint_name}: {e}")
             except Exception as e:
@@ -541,6 +599,16 @@ finally:
     for table, s in sorted(stats.items()):
         total = s['adds'] + s['updates'] + s['removes']
         print(f"  {table:20s} | total events: {total:8d} | resets: {s['resets']:4d} | errors: {s['errors']:3d}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
 
 # METADATA ********************
 
