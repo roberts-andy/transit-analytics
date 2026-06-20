@@ -1,0 +1,24 @@
+{
+  "properties": {
+    "description": "Daily pipeline that refreshes MBTA reference/static data (routes, stops, lines, shapes, etc.) into bronze.mbta.* Delta tables.",
+    "activities": [
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "00000000-0000-0000-0000-000000000000",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Run Reference Data Ingestion",
+        "dependsOn": []
+      }
+    ],
+    "annotations": []
+  }
+}
