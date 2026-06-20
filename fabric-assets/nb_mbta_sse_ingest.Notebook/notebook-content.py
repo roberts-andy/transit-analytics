@@ -8,12 +8,12 @@
 # META   },
 # META   "dependencies": {
 # META     "lakehouse": {
-# META       "default_lakehouse": "e7c516ba-df49-4dc6-9f32-299392d999c9",
+# META       "default_lakehouse": "82a4dd04-28a2-4ac4-acab-254953df7edb",
 # META       "default_lakehouse_name": "bronze",
 # META       "default_lakehouse_workspace_id": "c030c477-6e50-4334-8fcb-fd032f8870b9",
 # META       "known_lakehouses": [
 # META         {
-# META           "id": "e7c516ba-df49-4dc6-9f32-299392d999c9"
+# META           "id": "82a4dd04-28a2-4ac4-acab-254953df7edb"
 # META         }
 # META       ]
 # META     }
@@ -80,7 +80,6 @@ SSE_ENDPOINTS = {
 
 # CELL ********************
 
-spark.sql("CREATE SCHEMA IF NOT EXISTS mbta")
 print("Schema mbta ready")
 
 api_key = notebookutils.credentials.getSecret(KEYVAULT_URL, SECRET_MBTA_API_KEY)
