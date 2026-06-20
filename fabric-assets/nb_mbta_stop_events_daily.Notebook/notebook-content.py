@@ -43,6 +43,9 @@ import time
 
 spark = SparkSession.builder.getOrCreate()
 
+# Ensure schema exists
+spark.sql("CREATE SCHEMA IF NOT EXISTS bronze.mbta")
+
 # Configuration from Fabric Variable Library (transit-analytics-config)
 config = notebookutils.variableLibrary.getLibrary("transit-analytics-config")
 KEYVAULT_URL = config["keyvault_url"]
