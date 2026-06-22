@@ -1,0 +1,244 @@
+{
+  "properties": {
+    "description": "Daily batch pipeline that fetches WMATA reference data (stations, routes, lines) using REST Copy Activity and loads into bronze.wmata schema. No Spark compute required.",
+    "activities": [
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "RestSource",
+            "httpRequestTimeout": "00:01:00",
+            "requestInterval": "00.00:00:01.000",
+            "requestMethod": "GET",
+            "additionalHeaders": {
+              "api_key": {
+                "type": "Expression",
+                "value": "@pipeline().parameters.wmata_api_key"
+              }
+            },
+            "paginationRules": {}
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "Overwrite",
+            "partitionOption": "None"
+          }
+        },
+        "inputs": [
+          {
+            "type": "RestResource",
+            "typeProperties": {
+              "relativeUrl": "/Rail.svc/json/jStations"
+            },
+            "linkedService": {
+              "referenceName": "ls_wmata_rest_api",
+              "type": "LinkedServiceReference"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "type": "LakehouseTable",
+            "typeProperties": {
+              "schema": "wmata",
+              "table": "stations"
+            }
+          }
+        ],
+        "name": "Copy Stations",
+        "dependsOn": []
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "RestSource",
+            "httpRequestTimeout": "00:01:00",
+            "requestInterval": "00.00:00:01.000",
+            "requestMethod": "GET",
+            "additionalHeaders": {
+              "api_key": {
+                "type": "Expression",
+                "value": "@pipeline().parameters.wmata_api_key"
+              }
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "Overwrite",
+            "partitionOption": "None"
+          }
+        },
+        "inputs": [
+          {
+            "type": "RestResource",
+            "typeProperties": {
+              "relativeUrl": "/Bus.svc/json/jRoutes"
+            },
+            "linkedService": {
+              "referenceName": "ls_wmata_rest_api",
+              "type": "LinkedServiceReference"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "type": "LakehouseTable",
+            "typeProperties": {
+              "schema": "wmata",
+              "table": "bus_routes"
+            }
+          }
+        ],
+        "name": "Copy Bus Routes",
+        "dependsOn": []
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "RestSource",
+            "httpRequestTimeout": "00:01:00",
+            "requestInterval": "00.00:00:01.000",
+            "requestMethod": "GET",
+            "additionalHeaders": {
+              "api_key": {
+                "type": "Expression",
+                "value": "@pipeline().parameters.wmata_api_key"
+              }
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "Overwrite",
+            "partitionOption": "None"
+          }
+        },
+        "inputs": [
+          {
+            "type": "RestResource",
+            "typeProperties": {
+              "relativeUrl": "/Rail.svc/json/jLines"
+            },
+            "linkedService": {
+              "referenceName": "ls_wmata_rest_api",
+              "type": "LinkedServiceReference"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "type": "LakehouseTable",
+            "typeProperties": {
+              "schema": "wmata",
+              "table": "rail_lines"
+            }
+          }
+        ],
+        "name": "Copy Rail Lines",
+        "dependsOn": []
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "RestSource",
+            "httpRequestTimeout": "00:01:00",
+            "requestInterval": "00.00:00:01.000",
+            "requestMethod": "GET",
+            "additionalHeaders": {
+              "api_key": {
+                "type": "Expression",
+                "value": "@pipeline().parameters.wmata_api_key"
+              }
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "Overwrite",
+            "partitionOption": "None"
+          }
+        },
+        "inputs": [
+          {
+            "type": "RestResource",
+            "typeProperties": {
+              "relativeUrl": "/Rail.svc/json/jStationEntrances"
+            },
+            "linkedService": {
+              "referenceName": "ls_wmata_rest_api",
+              "type": "LinkedServiceReference"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "type": "LakehouseTable",
+            "typeProperties": {
+              "schema": "wmata",
+              "table": "station_entrances"
+            }
+          }
+        ],
+        "name": "Copy Station Entrances",
+        "dependsOn": []
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "RestSource",
+            "httpRequestTimeout": "00:01:00",
+            "requestInterval": "00.00:00:01.000",
+            "requestMethod": "GET",
+            "additionalHeaders": {
+              "api_key": {
+                "type": "Expression",
+                "value": "@pipeline().parameters.wmata_api_key"
+              }
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "Overwrite",
+            "partitionOption": "None"
+          }
+        },
+        "inputs": [
+          {
+            "type": "RestResource",
+            "typeProperties": {
+              "relativeUrl": "/Bus.svc/json/jStops"
+            },
+            "linkedService": {
+              "referenceName": "ls_wmata_rest_api",
+              "type": "LinkedServiceReference"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "type": "LakehouseTable",
+            "typeProperties": {
+              "schema": "wmata",
+              "table": "bus_stops"
+            }
+          }
+        ],
+        "name": "Copy Bus Stops",
+        "dependsOn": []
+      }
+    ],
+    "parameters": {
+      "wmata_api_key": {
+        "type": "string",
+        "defaultValue": ""
+      }
+    },
+    "annotations": [
+      "wmata",
+      "reference-data",
+      "daily"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+# Azure Function local development files
+local.settings.json
+.python_packages/
+.venv/
+__pycache__/
+*.pyc
+.funcignore

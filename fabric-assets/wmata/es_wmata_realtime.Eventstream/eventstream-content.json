@@ -1,0 +1,34 @@
+{
+  "properties": {
+    "description": "Consumes WMATA real-time events from Azure Event Hub and routes them to bronze lakehouse Delta tables (wmata.rail_predictions, wmata.bus_positions, wmata.rail_incidents, wmata.bus_incidents).",
+    "source": {
+      "type": "AzureEventHub",
+      "properties": {
+        "connectionString": "<EVENT_HUB_CONNECTION_STRING>",
+        "eventHubName": "wmata-realtime",
+        "consumerGroup": "$Default",
+        "dataFormat": "Json"
+      }
+    },
+    "destinations": [
+      {
+        "type": "Lakehouse",
+        "properties": {
+          "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
+          "lakehouseId": "82a4dd04-28a2-4ac4-acab-254953df7edb",
+          "schema": "wmata",
+          "table": "realtime_events",
+          "inputSerialization": {
+            "type": "Json",
+            "properties": {
+              "encoding": "UTF8"
+            }
+          }
+        }
+      }
+    ],
+    "routing": {
+      "description": "All events land in wmata.realtime_events; downstream notebooks or Dataflow Gen2 can fan out by _feed_name into separate tables if needed."
+    }
+  }
+}

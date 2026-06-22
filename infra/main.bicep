@@ -42,6 +42,22 @@ module keyVault 'modules/keyvault.bicep' = {
   }
 }
 
+// Deploy WMATA real-time ingestion infrastructure (Function App + Event Hub)
+module wmataFunction 'modules/wmata-function.bicep' = {
+  name: 'deploy-wmata-function'
+  scope: rg
+  params: {
+    location: location
+    namePrefix: 'wmata-ingest'
+    keyVaultName: keyVaultName
+    keyVaultResourceGroup: resourceGroupName
+    tags: tags
+  }
+}
+
 output resourceGroupId string = rg.id
 output keyVaultUri string = keyVault.outputs.keyVaultUri
 output keyVaultName string = keyVault.outputs.keyVaultName
+output wmataFunctionAppName string = wmataFunction.outputs.functionAppName
+output wmataEventHubNamespace string = wmataFunction.outputs.eventHubNamespaceName
+output wmataEventHubName string = wmataFunction.outputs.eventHubName
