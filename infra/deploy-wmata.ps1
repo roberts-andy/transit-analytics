@@ -61,7 +61,7 @@ Write-Host ""
 # Step 1: Deploy Bicep infrastructure
 # ─────────────────────────────────────────────────────────────────────────────
 if (-not $SkipInfraDeploy) {
-    Write-Host "[1/4] Deploying infrastructure (Bicep)..." -ForegroundColor Yellow
+    Write-Host "[1/5] Deploying infrastructure (Bicep)..." -ForegroundColor Yellow
 
     $deployResult = az deployment sub create `
         --location $Location `
@@ -80,14 +80,14 @@ if (-not $SkipInfraDeploy) {
     Write-Host "    Event Hub:    $($deployResult.properties.outputs.wmataEventHubNamespace.value)/$($deployResult.properties.outputs.wmataEventHubName.value)"
 }
 else {
-    Write-Host "[1/4] Skipping infrastructure deployment (--SkipInfraDeploy)" -ForegroundColor DarkGray
+    Write-Host "[1/5] Skipping infrastructure deployment (--SkipInfraDeploy)" -ForegroundColor DarkGray
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2: Store WMATA API key in Key Vault
 # ─────────────────────────────────────────────────────────────────────────────
 if ($WmataApiKey) {
-    Write-Host "[2/4] Storing WMATA API key in Key Vault..." -ForegroundColor Yellow
+    Write-Host "[2/5] Storing WMATA API key in Key Vault..." -ForegroundColor Yellow
 
     az keyvault secret set `
         --vault-name $KeyVaultName `
@@ -103,14 +103,14 @@ if ($WmataApiKey) {
     Write-Host "  ✓ Secret 'wmata-api-key' stored in '$KeyVaultName'" -ForegroundColor Green
 }
 else {
-    Write-Host "[2/4] Skipping secret storage (no -WmataApiKey provided)" -ForegroundColor DarkGray
+    Write-Host "[2/5] Skipping secret storage (no -WmataApiKey provided)" -ForegroundColor DarkGray
     Write-Host "       Run later: az keyvault secret set --vault-name $KeyVaultName --name wmata-api-key --value <key>"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 3: Grant Function App managed identity Key Vault access
 # ─────────────────────────────────────────────────────────────────────────────
-Write-Host "[3/4] Granting Function App Key Vault access..." -ForegroundColor Yellow
+Write-Host "[3/5] Granting Function App Key Vault access..." -ForegroundColor Yellow
 
 $funcIdentity = az functionapp identity show `
     --name $FunctionAppName `
@@ -152,7 +152,7 @@ if (-not $SkipFunctionDeploy) {
 
     Write-Host "  ✓ Package built: $zipPath" -ForegroundColor Green
 
-    # ── Step 5: Deploy zip to Flex Consumption via az functionapp deploy ──
+    # ── Step 5: Deploy via ARM OneDeploy with user-delegation SAS ──
     Write-Host "[5/5] Deploying to Flex Consumption..." -ForegroundColor Yellow
 
     # Remove WEBSITE_RUN_FROM_PACKAGE if set from a prior attempt — FC doesn't support it
@@ -170,32 +170,68 @@ if (-not $SkipFunctionDeploy) {
             --output none
     }
 
-    # Use az functionapp deploy — the supported deployment method for Flex Consumption
-    # This uploads the zip via the Zip Deploy API and writes it to deployment storage
-    Write-Host "  Deploying zip via Zip Deploy API..." -ForegroundColor DarkGray
-    az functionapp deploy `
-        --name $FunctionAppName `
+    # Ensure deployer has Storage Blob Data Owner for upload + SAS generation
+    $currentUser = az ad signed-in-user show --query id -o tsv
+    $storageId   = az storage account show `
+        --name $StorageAccountName `
         --resource-group $ResourceGroup `
-        --src-path $zipPath `
-        --type zip `
-        --clean true
+        --query id -o tsv
+
+    az role assignment create `
+        --assignee $currentUser `
+        --role "Storage Blob Data Owner" `
+        --scope $storageId `
+        --output none 2>$null
+
+    # Upload zip to deployment container (identity-based, no shared keys)
+    Write-Host "  Uploading package to deployment storage..." -ForegroundColor DarkGray
+    az storage blob upload `
+        --account-name $StorageAccountName `
+        --container-name $DeployContainer `
+        --file $zipPath `
+        --name $BlobName `
+        --auth-mode login `
+        --overwrite `
+        --output none
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Function App deploy failed."
+        Write-Error "Blob upload failed. You may need to wait ~30s for RBAC to propagate on first run."
         exit 1
     }
 
-    Write-Host "  ✓ Package deployed" -ForegroundColor Green
+    # Generate user-delegation SAS (identity-based, no storage keys)
+    $expiry = (Get-Date).AddHours(1).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $sasToken = az storage blob generate-sas `
+        --account-name $StorageAccountName `
+        --container-name $DeployContainer `
+        --name $BlobName `
+        --permissions r `
+        --expiry $expiry `
+        --auth-mode login `
+        --as-user `
+        -o tsv
 
-    # Wait and verify functions loaded
-    Write-Host "  Waiting 30s for host startup..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 30
+    $packageUrl = "https://${StorageAccountName}.blob.core.windows.net/${DeployContainer}/${BlobName}?${sasToken}"
 
-    Write-Host "  ✓ Function App restarted" -ForegroundColor Green
+    # Deploy via ARM OneDeploy endpoint (bypasses SCM/Kudu entirely)
+    Write-Host "  Triggering deployment via ARM OneDeploy..." -ForegroundColor DarkGray
+    $bodyObj  = @{ properties = @{ type = "zip"; packageUri = $packageUrl } }
+    $bodyFile = Join-Path $env:TEMP "wmata-deploy-body.json"
+    $bodyObj | ConvertTo-Json | Set-Content $bodyFile -Encoding UTF8
 
-    # Wait and verify functions loaded
-    Write-Host "  Waiting 30s for host startup..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 30
+    $subscriptionId = (az account show --query id -o tsv)
+    $deployUrl = "https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${ResourceGroup}/providers/Microsoft.Web/sites/${FunctionAppName}/extensions/onedeploy?api-version=2024-04-01"
+
+    az rest --method PUT --url $deployUrl --headers "Content-Type=application/json" --body "@$bodyFile" --output none 2>$null
+
+    # Clean up temp file
+    Remove-Item $bodyFile -ErrorAction SilentlyContinue
+
+    Write-Host "  ✓ Deployment initiated" -ForegroundColor Green
+
+    # Wait for deployment to complete and functions to load
+    Write-Host "  Waiting 45s for host startup..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 45
 
     $functions = az functionapp function list `
         --name $FunctionAppName `

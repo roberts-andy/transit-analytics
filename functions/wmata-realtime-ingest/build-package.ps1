@@ -91,15 +91,27 @@ Then re-run this script, or pass -PythonPath explicitly.
 
 Write-Host "Using Python: $python" -ForegroundColor Cyan
 
-# --- Set up temp build directory ---
-$buildRoot = Join-Path ([System.IO.Path]::GetTempPath()) "wmata-func-build-$(Get-Random)"
-$venvDir   = Join-Path $buildRoot "venv"
-$stageDir  = Join-Path $buildRoot "stage"
+# --- Reuse persistent .venv (create only if missing) ---
+$venvDir  = Join-Path $scriptDir ".venv"
+$stageDir = Join-Path ([System.IO.Path]::GetTempPath()) "wmata-func-stage"
 
-try {
-    New-Item -ItemType Directory -Path $buildRoot, $stageDir -Force | Out-Null
+if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
+New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
 
-    # Create virtual environment
+# Create venv only if it doesn't exist or Python version changed
+$venvPython = Join-Path $venvDir "Scripts\python.exe"
+$needsVenv  = -not (Test-Path $venvPython)
+
+if (-not $needsVenv) {
+    $existingVer = & $venvPython --version 2>&1
+    if ($existingVer -notmatch "Python 3\.11") {
+        Write-Host "Existing venv is $existingVer — recreating for 3.11..." -ForegroundColor DarkYellow
+        Remove-Item -Recurse -Force $venvDir
+        $needsVenv = $true
+    }
+}
+
+if ($needsVenv) {
     Write-Host "Creating Python 3.11 virtual environment..." -ForegroundColor Cyan
     if ($python -eq "py -3.11") {
         & py -3.11 -m venv $venvDir
@@ -108,16 +120,19 @@ try {
     }
     if ($LASTEXITCODE -ne 0) { throw "Failed to create virtual environment" }
 
-    $venvPython = Join-Path $venvDir "Scripts\python.exe"
-    $venvPip    = Join-Path $venvDir "Scripts\pip.exe"
-
-    # Verify version
-    $actualVer = & $venvPython --version 2>&1
-    Write-Host "Virtual environment Python: $actualVer" -ForegroundColor Green
-
-    # Upgrade pip
+    # Upgrade pip in new venv
     & $venvPython -m pip install --upgrade pip --quiet 2>&1 | Out-Null
+} else {
+    Write-Host "Reusing existing .venv" -ForegroundColor Cyan
+}
 
+$venvPip = Join-Path $venvDir "Scripts\pip.exe"
+
+# Verify version
+$actualVer = & $venvPython --version 2>&1
+Write-Host "Virtual environment Python: $actualVer" -ForegroundColor Green
+
+try {
     # Install dependencies into the .python_packages layout
     $packagesDir = Join-Path $stageDir ".python_packages\lib\site-packages"
     Write-Host "Installing dependencies from requirements.txt..." -ForegroundColor Cyan
@@ -157,16 +172,12 @@ try {
     Write-Host "  Package: $OutputPath" -ForegroundColor Green
     Write-Host "  Size:    $sizeMB MB" -ForegroundColor Green
     Write-Host ""
-    Write-Host "To deploy (Flex Consumption — no WEBSITE_RUN_FROM_PACKAGE):" -ForegroundColor Yellow
-    Write-Host "  1. Upload:  az storage blob upload --account-name wmataingeststor --container-name deploymentpackage --file `"$OutputPath`" --name wmata-func.zip --auth-mode login --overwrite" -ForegroundColor DarkYellow
-    Write-Host "  2. Restart: az functionapp restart -n wmata-ingest-func -g transit-analytics-rg" -ForegroundColor DarkYellow
-    Write-Host ""
-    Write-Host "Or run the full deployment script:" -ForegroundColor Yellow
+    Write-Host "To deploy, run:" -ForegroundColor Yellow
     Write-Host "  .\infra\deploy-wmata.ps1 -SkipInfraDeploy" -ForegroundColor DarkYellow
 }
 finally {
-    # Clean up temp build directory
-    if (Test-Path $buildRoot) {
-        Remove-Item -Recurse -Force $buildRoot -ErrorAction SilentlyContinue
+    # Clean up staging directory (venv is preserved for next build)
+    if (Test-Path $stageDir) {
+        Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
     }
 }
