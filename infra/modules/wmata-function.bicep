@@ -8,9 +8,6 @@ param namePrefix string = 'wmata-ingest'
 @description('Key Vault name to reference for secrets')
 param keyVaultName string
 
-@description('Key Vault resource group')
-param keyVaultResourceGroup string
-
 @description('Tags applied to all resources')
 param tags object = {
   project: 'transit-analytics'

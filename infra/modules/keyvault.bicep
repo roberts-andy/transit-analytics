@@ -14,13 +14,11 @@ param deployerObjectId string
 param tags object
 
 // Key Vault — private by default, trusted services bypass enabled
-// createMode 'recover' handles re-deploying when the vault was soft-deleted
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
   tags: tags
   properties: {
-    createMode: 'recover'
     sku: {
       family: 'A'
       name: 'standard'

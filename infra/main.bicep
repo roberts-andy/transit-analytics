@@ -50,7 +50,6 @@ module wmataFunction 'modules/wmata-function.bicep' = {
     location: location
     namePrefix: 'wmata-ingest'
     keyVaultName: keyVaultName
-    keyVaultResourceGroup: resourceGroupName
     tags: tags
   }
 }
