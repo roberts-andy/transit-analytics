@@ -139,7 +139,7 @@ else {
 # Step 4: Build, upload, and deploy Function App code
 # ─────────────────────────────────────────────────────────────────────────────
 if (-not $SkipFunctionDeploy) {
-    Write-Host "[4/6] Building Function App package..." -ForegroundColor Yellow
+    Write-Host "[4/5] Building Function App package..." -ForegroundColor Yellow
 
     $buildScript = Join-Path $FunctionProjectPath "build-package.ps1"
     $zipPath     = Join-Path $FunctionProjectPath "dist\wmata-func.zip"
@@ -152,28 +152,8 @@ if (-not $SkipFunctionDeploy) {
 
     Write-Host "  ✓ Package built: $zipPath" -ForegroundColor Green
 
-    # ── Step 5: Ensure we have Storage Blob Data Owner on the storage account ──
-    Write-Host "[5/6] Granting blob upload permissions..." -ForegroundColor Yellow
-
-    $currentUser = az ad signed-in-user show --query id -o tsv
-    $storageId   = az storage account show `
-        --name $StorageAccountName `
-        --resource-group $ResourceGroup `
-        --query id -o tsv
-
-    az role assignment create `
-        --assignee $currentUser `
-        --role "Storage Blob Data Owner" `
-        --scope $storageId `
-        --output none 2>$null
-
-    # Brief wait for RBAC propagation (skip if role already existed)
-    Write-Host "  Waiting 15s for RBAC propagation..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 15
-    Write-Host "  ✓ Blob permissions ready" -ForegroundColor Green
-
-    # ── Step 6: Upload zip to FC deployment storage and restart ──
-    Write-Host "[6/6] Deploying to Flex Consumption..." -ForegroundColor Yellow
+    # ── Step 5: Deploy zip to Flex Consumption via az functionapp deploy ──
+    Write-Host "[5/5] Deploying to Flex Consumption..." -ForegroundColor Yellow
 
     # Remove WEBSITE_RUN_FROM_PACKAGE if set from a prior attempt — FC doesn't support it
     $existingSettings = az functionapp config appsettings list `
@@ -190,28 +170,26 @@ if (-not $SkipFunctionDeploy) {
             --output none
     }
 
-    # Upload zip to the FC deployment storage container (identity-based auth)
-    # Flex Consumption reads packages from functionAppConfig.deployment.storage
-    az storage blob upload `
-        --account-name $StorageAccountName `
-        --container-name $DeployContainer `
-        --file $zipPath `
-        --name $BlobName `
-        --auth-mode login `
-        --overwrite `
-        --output none
+    # Use az functionapp deploy — the supported deployment method for Flex Consumption
+    # This uploads the zip via the Zip Deploy API and writes it to deployment storage
+    Write-Host "  Deploying zip via Zip Deploy API..." -ForegroundColor DarkGray
+    az functionapp deploy `
+        --name $FunctionAppName `
+        --resource-group $ResourceGroup `
+        --src-path $zipPath `
+        --type zip `
+        --clean true
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Blob upload failed."
+        Write-Error "Function App deploy failed."
         exit 1
     }
 
-    Write-Host "  ✓ Package uploaded to $StorageAccountName/$DeployContainer/$BlobName" -ForegroundColor Green
+    Write-Host "  ✓ Package deployed" -ForegroundColor Green
 
-    # Restart to pick up the new package from deployment storage
-    az functionapp restart `
-        --name $FunctionAppName `
-        --resource-group $ResourceGroup
+    # Wait and verify functions loaded
+    Write-Host "  Waiting 30s for host startup..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 30
 
     Write-Host "  ✓ Function App restarted" -ForegroundColor Green
 
@@ -234,7 +212,7 @@ if (-not $SkipFunctionDeploy) {
     }
 }
 else {
-    Write-Host "[4/6] Skipping Function App deploy (--SkipFunctionDeploy)" -ForegroundColor DarkGray
+    Write-Host "[4/5] Skipping Function App deploy (--SkipFunctionDeploy)" -ForegroundColor DarkGray
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
