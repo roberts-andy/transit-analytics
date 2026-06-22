@@ -167,15 +167,31 @@ if (-not $SkipFunctionDeploy) {
         --scope $storageId `
         --output none 2>$null
 
-    # Brief wait for RBAC propagation
-    Write-Host "  Waiting 30s for RBAC propagation..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 30
+    # Brief wait for RBAC propagation (skip if role already existed)
+    Write-Host "  Waiting 15s for RBAC propagation..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 15
     Write-Host "  ✓ Blob permissions ready" -ForegroundColor Green
 
-    # ── Step 6: Upload zip and configure the Function App ──
-    Write-Host "[6/6] Uploading package and deploying..." -ForegroundColor Yellow
+    # ── Step 6: Upload zip to FC deployment storage and restart ──
+    Write-Host "[6/6] Deploying to Flex Consumption..." -ForegroundColor Yellow
 
-    # Upload to blob storage (identity-based auth — no shared keys)
+    # Remove WEBSITE_RUN_FROM_PACKAGE if set from a prior attempt — FC doesn't support it
+    $existingSettings = az functionapp config appsettings list `
+        --name $FunctionAppName `
+        --resource-group $ResourceGroup `
+        --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].name" -o tsv 2>$null
+
+    if ($existingSettings) {
+        Write-Host "  Removing unsupported WEBSITE_RUN_FROM_PACKAGE setting..." -ForegroundColor DarkGray
+        az functionapp config appsettings delete `
+            --name $FunctionAppName `
+            --resource-group $ResourceGroup `
+            --setting-names WEBSITE_RUN_FROM_PACKAGE `
+            --output none
+    }
+
+    # Upload zip to the FC deployment storage container (identity-based auth)
+    # Flex Consumption reads packages from functionAppConfig.deployment.storage
     az storage blob upload `
         --account-name $StorageAccountName `
         --container-name $DeployContainer `
@@ -190,24 +206,9 @@ if (-not $SkipFunctionDeploy) {
         exit 1
     }
 
-    $blobUrl = "https://${StorageAccountName}.blob.core.windows.net/${DeployContainer}/${BlobName}"
-    Write-Host "  ✓ Uploaded to $blobUrl" -ForegroundColor Green
+    Write-Host "  ✓ Package uploaded to $StorageAccountName/$DeployContainer/$BlobName" -ForegroundColor Green
 
-    # Point the Function App at the uploaded package
-    az functionapp config appsettings set `
-        --name $FunctionAppName `
-        --resource-group $ResourceGroup `
-        --settings "WEBSITE_RUN_FROM_PACKAGE=$blobUrl" `
-        --output none
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to set WEBSITE_RUN_FROM_PACKAGE."
-        exit 1
-    }
-
-    Write-Host "  ✓ WEBSITE_RUN_FROM_PACKAGE configured" -ForegroundColor Green
-
-    # Restart to pick up new package
+    # Restart to pick up the new package from deployment storage
     az functionapp restart `
         --name $FunctionAppName `
         --resource-group $ResourceGroup

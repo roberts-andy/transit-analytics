@@ -157,10 +157,12 @@ try {
     Write-Host "  Package: $OutputPath" -ForegroundColor Green
     Write-Host "  Size:    $sizeMB MB" -ForegroundColor Green
     Write-Host ""
-    Write-Host "To deploy:" -ForegroundColor Yellow
-    Write-Host "  1. Upload:  az storage blob upload --account-name <storage> --container-name deployment --file `"$OutputPath`" --name wmata-func.zip --auth-mode login --overwrite" -ForegroundColor DarkYellow
-    Write-Host "  2. Set app: az functionapp config appsettings set -n wmata-ingest-func -g transit-analytics-rg --settings WEBSITE_RUN_FROM_PACKAGE=`"https://<storage>.blob.core.windows.net/deployment/wmata-func.zip`"" -ForegroundColor DarkYellow
-    Write-Host "  3. Restart: az functionapp restart -n wmata-ingest-func -g transit-analytics-rg" -ForegroundColor DarkYellow
+    Write-Host "To deploy (Flex Consumption — no WEBSITE_RUN_FROM_PACKAGE):" -ForegroundColor Yellow
+    Write-Host "  1. Upload:  az storage blob upload --account-name wmataingeststor --container-name deploymentpackage --file `"$OutputPath`" --name wmata-func.zip --auth-mode login --overwrite" -ForegroundColor DarkYellow
+    Write-Host "  2. Restart: az functionapp restart -n wmata-ingest-func -g transit-analytics-rg" -ForegroundColor DarkYellow
+    Write-Host ""
+    Write-Host "Or run the full deployment script:" -ForegroundColor Yellow
+    Write-Host "  .\infra\deploy-wmata.ps1 -SkipInfraDeploy" -ForegroundColor DarkYellow
 }
 finally {
     # Clean up temp build directory
