@@ -61,10 +61,10 @@ MAX_BACKOFF_SECONDS = int(config["mbta_sse_max_backoff_seconds"])
 
 # Real-time SSE endpoints (4 streams)
 SSE_ENDPOINTS = {
-    "predictions":     "/predictions",
+    # "predictions":     "/predictions",
     "vehicles":        "/vehicles",
     "alerts":          "/alerts",
-    "live_facilities": "/live_facilities",
+    # "live_facilities": "/live_facilities",
 }
 
 # METADATA ********************
