@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "Deploying transit-analytics infrastructure..." -ForegroundColor Yellow
 
 az deployment sub create `
-    --location centralus `
+    --location eastus `
     --template-file (Join-Path $PSScriptRoot "main.bicep") `
     --parameters (Join-Path $PSScriptRoot "main.bicepparam")
 
