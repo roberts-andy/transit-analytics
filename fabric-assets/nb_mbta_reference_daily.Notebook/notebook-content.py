@@ -63,12 +63,12 @@ ENDPOINTS = {
     "routes":          "/routes",
     "stops":           "/stops",
     "lines":           "/lines",
-    "shapes":          "/shapes",
+    # "shapes":          "/shapes",
     "route_patterns":  "/route_patterns",
     "facilities":      "/facilities",
-    "services":        "/services",
-    "schedules":       "/schedules",
-    "trips":           "/trips",
+    # "services":        "/services",
+    # "schedules":       "/schedules",
+    # "trips":           "/trips",
 }
 
 # METADATA ********************
@@ -296,6 +296,31 @@ if errors:
     for err in errors:
         print(f"  {err['endpoint']}: {err['error']}")
     raise RuntimeError(f"Failed: {[e['endpoint'] for e in errors]}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# MAGIC %%sql
+# MAGIC -- update from mbta.lines set attr_short_name = '0', _row_hash = 0 where attr_short_name like '7%'
+# MAGIC -- delete from mbta.lines where attr_short_name like '8%'
+# MAGIC 
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "sparksql",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
 
 # METADATA ********************
 
