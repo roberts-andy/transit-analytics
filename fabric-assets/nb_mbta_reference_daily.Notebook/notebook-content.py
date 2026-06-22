@@ -8,11 +8,12 @@
 # META   },
 # META   "dependencies": {
 # META     "lakehouse": {
+# META       "default_lakehouse": "82a4dd04-28a2-4ac4-acab-254953df7edb",
 # META       "default_lakehouse_name": "bronze",
 # META       "default_lakehouse_workspace_id": "c030c477-6e50-4334-8fcb-fd032f8870b9",
 # META       "known_lakehouses": [
 # META         {
-# META           "id": "e7c516ba-df49-4dc6-9f32-299392d999c9"
+# META           "id": "82a4dd04-28a2-4ac4-acab-254953df7edb"
 # META         }
 # META       ]
 # META     }
@@ -40,8 +41,6 @@ import time
 
 spark = SparkSession.builder.getOrCreate()
 
-# Ensure schema exists
-spark.sql("CREATE SCHEMA IF NOT EXISTS bronze.mbta")
 
 # Configuration from Fabric Variable Library
 config = notebookutils.variableLibrary.getLibrary("transit-analytics-config")
@@ -55,12 +54,12 @@ ENDPOINTS = {
     "routes":          "/routes",
     "stops":           "/stops",
     "lines":           "/lines",
-    "shapes":          "/shapes",
+    # "shapes":          "/shapes",
     "route_patterns":  "/route_patterns",
     "facilities":      "/facilities",
-    "services":        "/services",
-    "schedules":       "/schedules",
-    "trips":           "/trips",
+    # "services":        "/services",
+    # "schedules":       "/schedules",
+    # "trips":           "/trips",
 }
 
 # METADATA ********************
@@ -152,11 +151,8 @@ def compute_row_hash(row_dict: dict) -> str:
     content = "|".join(f"{k}={v}" for k, v in sorted(row_dict.items()))
     return hashlib.sha256(content.encode()).hexdigest()
 
-def load_endpoint_with_merge(name: str, path: str, api_key: str):
-    """Fetch an endpoint and MERGE into Delta — only update rows that changed."""
+for name, path in ENDPOINTS.items():
     full_table = f"mbta.{name}"
-    now_utc = datetime.now(timezone.utc).isoformat()
-    
     try:
         print(f"  {name}...", end="")
         entities = fetch_all_pages(path, api_key)
@@ -272,6 +268,16 @@ if errors:
     for err in errors:
         print(f"  {err['endpoint']}: {err['error']}")
     raise RuntimeError(f"Failed to load {len(errors)} endpoint(s): {[e['endpoint'] for e in errors]}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
 
 # METADATA ********************
 
