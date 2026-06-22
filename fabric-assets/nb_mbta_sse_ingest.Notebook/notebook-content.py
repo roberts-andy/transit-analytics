@@ -249,11 +249,13 @@ class EventBuffer:
         # Incremental upserts
         upsert_entities = buf["adds"] + buf["updates"]
         if upsert_entities:
-            df = self._entities_to_df(upsert_entities)
+            # Deduplicate by id — last event wins (keeps latest state per entity)
+            deduped = {e.get("id"): e for e in upsert_entities if e.get("id")}
+            df = self._entities_to_df(list(deduped.values()))
             if df is not None:
                 if not self.spark.catalog.tableExists(full_table):
                     df.write.format("delta").mode("overwrite").saveAsTable(full_table)
-                    print(f"[{datetime.now()}] INIT {full_table}: {len(upsert_entities)} entities")
+                    print(f"[{datetime.now()}] INIT {full_table}: {len(deduped)} entities")
                 else:
                     delta_table = DeltaTable.forName(self.spark, full_table)
                     delta_table.alias("target").merge(
@@ -265,9 +267,9 @@ class EventBuffer:
                         m = history[0]["operationMetrics"]
                         ins = int(m.get("numTargetRowsInserted", 0))
                         upd = int(m.get("numTargetRowsUpdated", 0))
-                        print(f"[{datetime.now()}] MERGE {full_table}: inserted={ins} updated={upd} (events: +{len(buf['adds'])} ~{len(buf['updates'])})")
+                        print(f"[{datetime.now()}] MERGE {full_table}: inserted={ins} updated={upd} (events: +{len(buf['adds'])} ~{len(buf['updates'])} deduped={len(deduped)})")
                     else:
-                        print(f"[{datetime.now()}] MERGE {full_table}: +{len(buf['adds'])} ~{len(buf['updates'])}")
+                        print(f"[{datetime.now()}] MERGE {full_table}: +{len(buf['adds'])} ~{len(buf['updates'])} deduped={len(deduped)}")
         
         # Removes
         remove_entities = buf["removes"]
