@@ -60,6 +60,26 @@
       "name": "wmata_api_base",
       "type": "String",
       "value": "https://api.wmata.com"
+    },
+    {
+      "name": "wmata_event_hub_namespace",
+      "type": "String",
+      "value": "wmata-ingest-ehns"
+    },
+    {
+      "name": "wmata_event_hub_name",
+      "type": "String",
+      "value": "wmata-realtime"
+    },
+    {
+      "name": "wmata_event_hub_consumer_group",
+      "type": "String",
+      "value": "fabric-eventstream"
+    },
+    {
+      "name": "wmata_function_poll_interval_seconds",
+      "type": "String",
+      "value": "20"
     }
   ]
 }
