@@ -80,15 +80,26 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-// App Service Plan (Consumption — serverless, scales to zero)
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+// Blob service + deployment container (required by Flex Consumption)
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'deploymentpackage'
+}
+
+// App Service Plan (Flex Consumption — near-zero cold starts, scales to zero)
+resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: '${namePrefix}-plan'
   location: location
   tags: tags
   kind: 'functionapp'
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'FC1'
+    tier: 'FlexConsumption'
   }
   properties: {
     reserved: true // Linux
@@ -107,8 +118,8 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-// Function App
-resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+// Function App (Flex Consumption requires functionAppConfig)
+resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: '${namePrefix}-func'
   location: location
   tags: tags
@@ -119,20 +130,31 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storageAccount.properties.primaryEndpoints.blob}deploymentpackage'
+          authentication: {
+            type: 'StorageAccountConnectionString'
+            storageAccountConnectionStringName: 'AzureWebJobsStorage'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 40
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'python'
+        version: '3.11'
+      }
+    }
     siteConfig: {
-      pythonVersion: '3.11'
       appSettings: [
         {
           name: 'AzureWebJobsStorage'
           value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=core.windows.net;AccountKey=${storageAccount.listKeys().keys[0].value}'
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'python'
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
