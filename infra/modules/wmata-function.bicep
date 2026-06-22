@@ -2,6 +2,7 @@
 param location string = 'eastus'
 
 @description('Name prefix for all WMATA ingestion resources')
+@minLength(6)
 param namePrefix string = 'wmata-ingest'
 
 @description('Key Vault name to reference for secrets')
@@ -82,15 +83,15 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-// App Service Plan (Flex Consumption for near-zero cold starts)
+// App Service Plan (Consumption — serverless, scales to zero)
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${namePrefix}-plan'
   location: location
   tags: tags
   kind: 'functionapp'
   sku: {
-    name: 'FC1'
-    tier: 'FlexConsumption'
+    name: 'Y1'
+    tier: 'Dynamic'
   }
   properties: {
     reserved: true // Linux
@@ -157,15 +158,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-// Grant Function App access to Key Vault (Key Vault Secrets User role)
-resource keyVaultRef 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
-  name: keyVaultName
-  scope: resourceGroup(keyVaultResourceGroup)
-}
-
 output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 output eventHubNamespaceName string = eventHubNamespace.name
 output eventHubName string = eventHub.name
-output eventHubListenConnectionString string = ehListenRule.listKeys().primaryConnectionString
 output appInsightsInstrumentationKey string = appInsights.properties.InstrumentationKey
