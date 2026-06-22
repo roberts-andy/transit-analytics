@@ -77,6 +77,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   properties: {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
+    allowSharedKeyAccess: true
   }
 }
 
@@ -136,8 +137,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           type: 'blobContainer'
           value: '${storageAccount.properties.primaryEndpoints.blob}deploymentpackage'
           authentication: {
-            type: 'StorageAccountConnectionString'
-            storageAccountConnectionStringName: 'AzureWebJobsStorage'
+            type: 'SystemAssignedIdentity'
           }
         }
       }
@@ -153,8 +153,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
     siteConfig: {
       appSettings: [
         {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=core.windows.net;AccountKey=${storageAccount.listKeys().keys[0].value}'
+          name: 'AzureWebJobsStorage__accountName'
+          value: storageAccount.name
         }
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -174,6 +174,17 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         }
       ]
     }
+  }
+}
+
+// Grant Function App managed identity Storage Blob Data Owner on the storage account
+resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, functionApp.id, 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+  scope: storageAccount
+  properties: {
+    principalId: functionApp.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b') // Storage Blob Data Owner
+    principalType: 'ServicePrincipal'
   }
 }
 
