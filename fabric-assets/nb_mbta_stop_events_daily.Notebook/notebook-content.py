@@ -237,6 +237,8 @@ if not spark.catalog.tableExists(TABLE_NAME):
         .partitionBy("_service_date") \
         .mode("overwrite") \
         .saveAsTable(TABLE_NAME)
+    row_count = df.count()
+    print(f"  → inserted: {row_count} | updated: 0 (new table)")
 else:
     delta_table = DeltaTable.forName(spark, TABLE_NAME)
     delta_table.alias("target").merge(
@@ -245,6 +247,15 @@ else:
     ).whenMatchedUpdateAll(
     ).whenNotMatchedInsertAll(
     ).execute()
+    # Get actual row counts from Delta metrics
+    history = delta_table.history(1).select("operationMetrics").collect()
+    if history and history[0]["operationMetrics"]:
+        m = history[0]["operationMetrics"]
+        ins = int(m.get("numTargetRowsInserted", 0))
+        upd = int(m.get("numTargetRowsUpdated", 0))
+        print(f"  → inserted: {ins} | updated: {upd}")
+    else:
+        print(f"  → MERGE complete (metrics unavailable)")
 
 print(f"✓ Stop events for {target_date} written to {TABLE_NAME}")
 

@@ -259,7 +259,15 @@ class EventBuffer:
                     delta_table.alias("target").merge(
                         df.alias("source"), "target.id = source.id"
                     ).whenMatchedUpdateAll().whenNotMatchedInsertAll().execute()
-                    print(f"[{datetime.now()}] MERGE {full_table}: +{len(buf['adds'])} ~{len(buf['updates'])}")
+                    # Get actual row counts from Delta metrics
+                    history = delta_table.history(1).select("operationMetrics").collect()
+                    if history and history[0]["operationMetrics"]:
+                        m = history[0]["operationMetrics"]
+                        ins = int(m.get("numTargetRowsInserted", 0))
+                        upd = int(m.get("numTargetRowsUpdated", 0))
+                        print(f"[{datetime.now()}] MERGE {full_table}: inserted={ins} updated={upd} (events: +{len(buf['adds'])} ~{len(buf['updates'])})")
+                    else:
+                        print(f"[{datetime.now()}] MERGE {full_table}: +{len(buf['adds'])} ~{len(buf['updates'])}")
         
         # Removes
         remove_entities = buf["removes"]
