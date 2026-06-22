@@ -228,6 +228,13 @@ def load_endpoint_incremental(name: str, path: str, api_key: str, now_utc: str) 
         values={c: F.col(f"source.{c}") for c in field_names}
     ).execute()
     
+    # Extract insert/update counts from Delta history
+    history = delta_table.history(1).select("operationMetrics").collect()
+    if history:
+        metrics = history[0]["operationMetrics"]
+        stats["inserted"] = int(metrics.get("numTargetRowsInserted", 0))
+        stats["updated"] = int(metrics.get("numTargetRowsUpdated", 0))
+    
     # Soft-delete: rows in target that are active but not in source
     source_ids = df_source.select("id")
     stale_rows = (
@@ -239,7 +246,6 @@ def load_endpoint_incremental(name: str, path: str, api_key: str, now_utc: str) 
     soft_delete_count = stale_rows.count()
     if soft_delete_count > 0:
         stale_ids = [row["id"] for row in stale_rows.select("id").collect()]
-        # Batch the soft-delete in chunks to avoid SQL length limits
         for i in range(0, len(stale_ids), 500):
             chunk = stale_ids[i:i+500]
             id_list = ",".join([f"'{sid}'" for sid in chunk])
@@ -250,9 +256,7 @@ def load_endpoint_incremental(name: str, path: str, api_key: str, now_utc: str) 
             """)
         stats["soft_deleted"] = soft_delete_count
     
-    # Count active records
-    active_count = delta_table.toDF().filter(F.col("_is_active") == "true").count()
-    print(f" {stats['fetched']} fetched | {active_count} active | {soft_delete_count} soft-deleted")
+    print(f"  → inserted: {stats['inserted']} | updated: {stats['updated']} | soft-deleted: {stats['soft_deleted']}")
     return stats
 
 # METADATA ********************
@@ -287,10 +291,15 @@ for name, path in ENDPOINTS.items():
 
 print("=" * 60)
 total_fetched = sum(s["fetched"] for s in all_stats)
+total_inserted = sum(s["inserted"] for s in all_stats)
+total_updated = sum(s["updated"] for s in all_stats)
 total_deleted = sum(s["soft_deleted"] for s in all_stats)
-print(f"[{datetime.now()}] Complete: {total_fetched} records across {len(all_stats)} endpoints")
-if total_deleted:
-    print(f"  Soft-deleted: {total_deleted} stale records")
+print(f"[{datetime.now()}] Complete: {len(all_stats)} endpoints")
+print(f"  Fetched:      {total_fetched:,}")
+print(f"  Inserted:     {total_inserted:,}")
+print(f"  Updated:      {total_updated:,}")
+print(f"  Soft-deleted: {total_deleted:,}")
+print(f"  Unchanged:    {total_fetched - total_inserted - total_updated:,}")
 if errors:
     print(f"\nERRORS ({len(errors)}):")
     for err in errors:
