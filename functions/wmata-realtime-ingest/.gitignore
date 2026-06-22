@@ -5,3 +5,4 @@ local.settings.json
 __pycache__/
 *.pyc
 .funcignore
+dist/
