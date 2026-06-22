@@ -1,13 +1,17 @@
 <#
 .SYNOPSIS
-    Deploys WMATA real-time ingestion infrastructure (Function App + Event Hub)
-    and publishes the Azure Function code.
+    Deploys WMATA real-time ingestion infrastructure and Function App code.
 
 .DESCRIPTION
-    1. Deploys the Bicep template (Key Vault + WMATA Function App + Event Hub)
-    2. Stores the WMATA API key in Key Vault
+    1. Deploys the Bicep template (Key Vault ref + WMATA Function App + Event Hub)
+    2. Stores the WMATA API key in Key Vault (optional — skip if already set)
     3. Grants the Function App managed identity Key Vault Secrets User access
-    4. Publishes the Function App code
+    4. Builds a self-contained Python zip via build-package.ps1 (requires Python 3.11)
+    5. Grants deployer Storage Blob Data Owner for identity-based upload
+    6. Uploads zip to blob storage and sets WEBSITE_RUN_FROM_PACKAGE
+
+    This avoids the func CLI and shared-key auth, which are blocked by
+    subscription Azure Policy on the storage account.
 
 .PARAMETER WmataApiKey
     Your WMATA developer API key. Will be stored in Key Vault.
@@ -37,6 +41,9 @@ $Location = "eastus"
 $ResourceGroup = "transit-analytics-rg"
 $KeyVaultName = "kvtransitdemo-f70cfb6a"
 $FunctionAppName = "wmata-ingest-func"
+$StorageAccountName = "wmataingeststor"
+$DeployContainer = "deploymentpackage"
+$BlobName = "wmata-func.zip"
 $FunctionProjectPath = Join-Path $PSScriptRoot "..\functions\wmata-realtime-ingest"
 
 Write-Host ""
@@ -129,41 +136,104 @@ else {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 4: Publish Function App code
+# Step 4: Build, upload, and deploy Function App code
 # ─────────────────────────────────────────────────────────────────────────────
 if (-not $SkipFunctionDeploy) {
-    Write-Host "[4/4] Publishing Function App code..." -ForegroundColor Yellow
+    Write-Host "[4/6] Building Function App package..." -ForegroundColor Yellow
 
-    if (-not (Get-Command func -ErrorAction SilentlyContinue)) {
-        Write-Error "Azure Functions Core Tools (func) not found. Install: npm install -g azure-functions-core-tools@4"
+    $buildScript = Join-Path $FunctionProjectPath "build-package.ps1"
+    $zipPath     = Join-Path $FunctionProjectPath "dist\wmata-func.zip"
+
+    & $buildScript -OutputPath $zipPath
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $zipPath)) {
+        Write-Error "Package build failed. Ensure Python 3.11 is installed."
         exit 1
     }
 
-    Push-Location $FunctionProjectPath
-    try {
-        # Install Python dependencies
-        if (Test-Path "requirements.txt") {
-            Write-Host "  Installing Python dependencies..."
-            pip install -r requirements.txt --target .python_packages/lib/site-packages --quiet
-        }
+    Write-Host "  ✓ Package built: $zipPath" -ForegroundColor Green
 
-        # Publish to Azure
-        Write-Host "  Publishing to $FunctionAppName..."
-        func azure functionapp publish $FunctionAppName --python
+    # ── Step 5: Ensure we have Storage Blob Data Owner on the storage account ──
+    Write-Host "[5/6] Granting blob upload permissions..." -ForegroundColor Yellow
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Function App publish failed."
-            exit 1
-        }
+    $currentUser = az ad signed-in-user show --query id -o tsv
+    $storageId   = az storage account show `
+        --name $StorageAccountName `
+        --resource-group $ResourceGroup `
+        --query id -o tsv
 
-        Write-Host "  ✓ Function App published" -ForegroundColor Green
+    az role assignment create `
+        --assignee $currentUser `
+        --role "Storage Blob Data Owner" `
+        --scope $storageId `
+        --output none 2>$null
+
+    # Brief wait for RBAC propagation
+    Write-Host "  Waiting 30s for RBAC propagation..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 30
+    Write-Host "  ✓ Blob permissions ready" -ForegroundColor Green
+
+    # ── Step 6: Upload zip and configure the Function App ──
+    Write-Host "[6/6] Uploading package and deploying..." -ForegroundColor Yellow
+
+    # Upload to blob storage (identity-based auth — no shared keys)
+    az storage blob upload `
+        --account-name $StorageAccountName `
+        --container-name $DeployContainer `
+        --file $zipPath `
+        --name $BlobName `
+        --auth-mode login `
+        --overwrite `
+        --output none
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Blob upload failed."
+        exit 1
     }
-    finally {
-        Pop-Location
+
+    $blobUrl = "https://${StorageAccountName}.blob.core.windows.net/${DeployContainer}/${BlobName}"
+    Write-Host "  ✓ Uploaded to $blobUrl" -ForegroundColor Green
+
+    # Point the Function App at the uploaded package
+    az functionapp config appsettings set `
+        --name $FunctionAppName `
+        --resource-group $ResourceGroup `
+        --settings "WEBSITE_RUN_FROM_PACKAGE=$blobUrl" `
+        --output none
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to set WEBSITE_RUN_FROM_PACKAGE."
+        exit 1
+    }
+
+    Write-Host "  ✓ WEBSITE_RUN_FROM_PACKAGE configured" -ForegroundColor Green
+
+    # Restart to pick up new package
+    az functionapp restart `
+        --name $FunctionAppName `
+        --resource-group $ResourceGroup
+
+    Write-Host "  ✓ Function App restarted" -ForegroundColor Green
+
+    # Wait and verify functions loaded
+    Write-Host "  Waiting 30s for host startup..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 30
+
+    $functions = az functionapp function list `
+        --name $FunctionAppName `
+        --resource-group $ResourceGroup `
+        --query "[].name" -o tsv 2>$null
+
+    if ($functions) {
+        Write-Host "  ✓ Functions loaded:" -ForegroundColor Green
+        $functions -split "`n" | ForEach-Object { Write-Host "      $_" -ForegroundColor Green }
+    }
+    else {
+        Write-Host "  ⚠ No functions detected yet — may still be loading. Check:" -ForegroundColor DarkYellow
+        Write-Host "    az functionapp function list --name $FunctionAppName --resource-group $ResourceGroup" -ForegroundColor DarkYellow
     }
 }
 else {
-    Write-Host "[4/4] Skipping Function App deploy (--SkipFunctionDeploy)" -ForegroundColor DarkGray
+    Write-Host "[4/6] Skipping Function App deploy (--SkipFunctionDeploy)" -ForegroundColor DarkGray
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -173,6 +243,9 @@ Write-Host ""
 Write-Host "================================================" -ForegroundColor Green
 Write-Host " Deployment Complete" -ForegroundColor Green
 Write-Host "================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Redeploy code only:"
+Write-Host "    .\infra\deploy-wmata.ps1 -SkipInfraDeploy" -ForegroundColor DarkYellow
 Write-Host ""
 Write-Host "  Next steps:"
 Write-Host "    1. In Fabric, create an Eventstream connected to:"
