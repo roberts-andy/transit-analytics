@@ -22,25 +22,34 @@
 
 # MARKDOWN ********************
 
-# # MBTA Reference Data — Daily Batch Ingestion
+# # MBTA Reference Data — Daily Incremental Load
 # 
-# Fetches full snapshots of all static/slow-changing MBTA endpoints via paginated REST.
-# Each endpoint is overwritten as a Delta table in `bronze.mbta.*`.
+# Fetches full snapshots from slow-changing MBTA endpoints, then uses Delta MERGE
+# to detect and apply only actual changes. Each row carries metadata:
 # 
-# **Endpoints:** routes, stops, lines, shapes, route_patterns, facilities, services, schedules, trips
+# - `_row_hash` — SHA-256 of all data columns (change detection)
+# - `_created_at` — When the row was first ingested
+# - `_updated_at` — When the row was last modified
+# - `_is_active` — `true` if still present in source; `false` if soft-deleted
 # 
-# **Schedule:** Daily (these change at most with GTFS service changes)
+# **Schedule:** Daily via `pl_mbta_reference_daily`
 
 # CELL ********************
 
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, StructField, StringType
+from delta.tables import DeltaTable
 from datetime import datetime, timezone
 import requests
 import json
 import time
+import hashlib
 
 spark = SparkSession.builder.getOrCreate()
 
+# Ensure schema exists
+spark.sql("CREATE SCHEMA IF NOT EXISTS mbta")
 
 # Configuration from Fabric Variable Library
 config = notebookutils.variableLibrary.getLibrary("transit-analytics-config")
@@ -54,12 +63,12 @@ ENDPOINTS = {
     "routes":          "/routes",
     "stops":           "/stops",
     "lines":           "/lines",
-    # "shapes":          "/shapes",
+    "shapes":          "/shapes",
     "route_patterns":  "/route_patterns",
     "facilities":      "/facilities",
-    # "services":        "/services",
-    # "schedules":       "/schedules",
-    # "trips":           "/trips",
+    "services":        "/services",
+    "schedules":       "/schedules",
+    "trips":           "/trips",
 }
 
 # METADATA ********************
@@ -75,7 +84,7 @@ ENDPOINTS = {
 
 # CELL ********************
 
-api_key = mssparkutils.credentials.getSecret(KEYVAULT_URL, SECRET_MBTA_API_KEY)
+api_key = notebookutils.credentials.getSecret(KEYVAULT_URL, SECRET_MBTA_API_KEY)
 print(f"API key retrieved ({len(api_key)} chars)")
 
 # METADATA ********************
@@ -87,7 +96,7 @@ print(f"API key retrieved ({len(api_key)} chars)")
 
 # MARKDOWN ********************
 
-# ## Fetch & Load All Reference Endpoints
+# ## Helper Functions
 
 # CELL ********************
 
@@ -111,9 +120,10 @@ def fetch_all_pages(endpoint_path: str, api_key: str) -> list:
     
     return all_data
 
+
 def flatten_entity(entity: dict) -> dict:
-    """Flatten a JSON:API entity into a flat dict for Delta storage."""
-    flat = {"id": entity.get("id"), "type": entity.get("type")}
+    """Flatten a JSON:API entity into a flat dict (all values as strings)."""
+    flat = {"id": str(entity.get("id", "")), "type": str(entity.get("type", ""))}
     
     for key, value in entity.get("attributes", {}).items():
         if isinstance(value, (dict, list)):
@@ -131,106 +141,11 @@ def flatten_entity(entity: dict) -> dict:
     
     return flat
 
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
-from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType
-from delta.tables import DeltaTable
-import hashlib
 
 def compute_row_hash(row_dict: dict) -> str:
-    """Compute a SHA-256 hash of all data columns (excludes metadata columns)."""
-    # Sort keys for deterministic hashing
+    """SHA-256 hash of all data columns for change detection."""
     content = "|".join(f"{k}={v}" for k, v in sorted(row_dict.items()))
     return hashlib.sha256(content.encode()).hexdigest()
-
-for name, path in ENDPOINTS.items():
-    full_table = f"mbta.{name}"
-    try:
-        print(f"  {name}...", end="")
-        entities = fetch_all_pages(path, api_key)
-        if not entities:
-            print(f" 0 records (skipped)")
-            return {"name": name, "fetched": 0, "inserted": 0, "updated": 0, "deleted": 0}
-        
-        # Flatten and add content hash
-        flat_rows = []
-        for e in entities:
-            flat = flatten_entity(e)
-            flat["_row_hash"] = compute_row_hash(flat)
-            flat_rows.append(flat)
-        
-        # Build all-string schema for consistency
-        all_fields = set()
-        for row in flat_rows:
-            all_fields.update(row.keys())
-        # Add metadata columns
-        all_fields.update(["_created_at", "_updated_at", "_is_active"])
-        field_names = sorted(all_fields)
-        schema = StructType([StructField(f, StringType(), True) for f in field_names])
-        
-        # Normalize rows (fill missing fields)
-        normalized = []
-        for row in flat_rows:
-            norm = {f: row.get(f, "") for f in field_names}
-            norm["_created_at"] = now_utc  # Will be overridden by merge logic for existing rows
-            norm["_updated_at"] = now_utc
-            norm["_is_active"] = "true"
-            normalized.append(norm)
-        
-        df_source = spark.createDataFrame(normalized, schema=schema)
-        
-        # If table doesn't exist, create it
-        if not spark.catalog.tableExists(full_table):
-            df_source.write.format("delta").mode("overwrite").saveAsTable(full_table)
-            count = len(flat_rows)
-            print(f" {count} records (new table)")
-            return {"name": name, "fetched": count, "inserted": count, "updated": 0, "deleted": 0}
-        
-        # MERGE: match on id, update only when hash differs, insert new, soft-delete removed
-        delta_table = DeltaTable.forName(spark, full_table)
-        
-        # Columns to update (everything except _created_at)
-        update_cols = {c: f"source.{c}" for c in field_names if c not in ("_created_at",)}
-        insert_cols = {c: f"source.{c}" for c in field_names}
-        
-        merge_result = delta_table.alias("target").merge(
-            df_source.alias("source"),
-            "target.id = source.id"
-        ).whenMatchedUpdate(
-            condition="target._row_hash != source._row_hash",
-            set=update_cols
-        ).whenNotMatchedInsertAll(
-        ).execute()
-        
-        # Soft-delete: mark rows no longer in source as inactive
-        source_ids = df_source.select("id")
-        inactive_df = delta_table.toDF().alias("t").join(
-            source_ids.alias("s"), F.col("t.id") == F.col("s.id"), "left_anti"
-        ).filter(F.col("t._is_active") == "true")
-        
-        deleted_count = inactive_df.count()
-        if deleted_count > 0:
-            inactive_ids = [row.id for row in inactive_df.select("t.id").collect()]
-            id_list = ",".join([f"'{i}'" for i in inactive_ids])
-            spark.sql(f"UPDATE {full_table} SET _is_active = 'false', _updated_at = '{now_utc}' WHERE id IN ({id_list})")
-        
-        # Get stats from the merge (approximate via count comparison)
-        new_total = delta_table.toDF().filter(F.col("_is_active") == "true").count()
-        fetched = len(flat_rows)
-        print(f" {fetched} fetched | active: {new_total} | soft-deleted: {deleted_count}")
-        return {"name": name, "fetched": fetched, "inserted": 0, "updated": 0, "deleted": deleted_count}
-        
-    except Exception as e:
-        print(f" ERROR: {e}")
-        raise
 
 # METADATA ********************
 
@@ -241,33 +156,104 @@ for name, path in ENDPOINTS.items():
 
 # MARKDOWN ********************
 
-# ## Execute MERGE for All Reference Endpoints
+# ## Incremental MERGE Logic
+# 
+# For each endpoint:
+# 1. Fetch all records from API
+# 2. Compute `_row_hash` for change detection
+# 3. MERGE into Delta: insert new, update changed (hash differs), skip unchanged
+# 4. Soft-delete rows no longer present in source (`_is_active = false`)
 
 # CELL ********************
 
-print(f"[{datetime.now()}] Loading MBTA reference data (incremental merge)...")
-print("=" * 60)
-
-results = []
-errors = []
-
-for name, path in ENDPOINTS.items():
-    try:
-        result = load_endpoint_with_merge(name, path, api_key)
-        results.append(result)
-    except Exception as e:
-        errors.append({"endpoint": name, "error": str(e)})
-    time.sleep(1)
-
-print("=" * 60)
-print(f"[{datetime.now()}] Reference data load complete.")
-total_fetched = sum(r["fetched"] for r in results)
-print(f"\nSummary: {total_fetched} total records fetched across {len(results)} endpoints")
-if errors:
-    print(f"ERRORS ({len(errors)}):")
-    for err in errors:
-        print(f"  {err['endpoint']}: {err['error']}")
-    raise RuntimeError(f"Failed to load {len(errors)} endpoint(s): {[e['endpoint'] for e in errors]}")
+def load_endpoint_incremental(name: str, path: str, api_key: str, now_utc: str) -> dict:
+    """Fetch endpoint data and MERGE into Delta — only touches changed rows."""
+    full_table = f"mbta.{name}"
+    stats = {"name": name, "fetched": 0, "inserted": 0, "updated": 0, "soft_deleted": 0}
+    
+    print(f"  {name}...", end="")
+    entities = fetch_all_pages(path, api_key)
+    stats["fetched"] = len(entities)
+    
+    if not entities:
+        print(f" 0 records (skipped)")
+        return stats
+    
+    # Flatten entities and compute content hash
+    flat_rows = []
+    for e in entities:
+        flat = flatten_entity(e)
+        flat["_row_hash"] = compute_row_hash(flat)
+        flat_rows.append(flat)
+    
+    # Build unified all-string schema across all rows
+    all_fields = set()
+    for row in flat_rows:
+        all_fields.update(row.keys())
+    all_fields.update(["_created_at", "_updated_at", "_is_active"])
+    field_names = sorted(all_fields)
+    schema = StructType([StructField(f, StringType(), True) for f in field_names])
+    
+    # Normalize rows
+    normalized = []
+    for row in flat_rows:
+        norm = {f: row.get(f, "") for f in field_names}
+        norm["_created_at"] = now_utc
+        norm["_updated_at"] = now_utc
+        norm["_is_active"] = "true"
+        normalized.append(norm)
+    
+    df_source = spark.createDataFrame(normalized, schema=schema)
+    
+    # First run — create table directly
+    if not spark.catalog.tableExists(full_table):
+        df_source.write.format("delta").mode("overwrite").saveAsTable(full_table)
+        stats["inserted"] = len(flat_rows)
+        print(f" {len(flat_rows)} records (new table created)")
+        return stats
+    
+    # MERGE: update only rows where _row_hash changed
+    delta_table = DeltaTable.forName(spark, full_table)
+    
+    # Build column maps for update (preserve _created_at from target)
+    update_cols = {c: F.col(f"source.{c}") for c in field_names if c != "_created_at"}
+    
+    delta_table.alias("target").merge(
+        df_source.alias("source"),
+        "target.id = source.id"
+    ).whenMatchedUpdate(
+        condition="target._row_hash != source._row_hash",
+        set=update_cols
+    ).whenNotMatchedInsert(
+        values={c: F.col(f"source.{c}") for c in field_names}
+    ).execute()
+    
+    # Soft-delete: rows in target that are active but not in source
+    source_ids = df_source.select("id")
+    stale_rows = (
+        delta_table.toDF().alias("t")
+        .join(source_ids.alias("s"), F.col("t.id") == F.col("s.id"), "left_anti")
+        .filter(F.col("t._is_active") == "true")
+    )
+    
+    soft_delete_count = stale_rows.count()
+    if soft_delete_count > 0:
+        stale_ids = [row["id"] for row in stale_rows.select("id").collect()]
+        # Batch the soft-delete in chunks to avoid SQL length limits
+        for i in range(0, len(stale_ids), 500):
+            chunk = stale_ids[i:i+500]
+            id_list = ",".join([f"'{sid}'" for sid in chunk])
+            spark.sql(f"""
+                UPDATE {full_table} 
+                SET _is_active = 'false', _updated_at = '{now_utc}' 
+                WHERE id IN ({id_list})
+            """)
+        stats["soft_deleted"] = soft_delete_count
+    
+    # Count active records
+    active_count = delta_table.toDF().filter(F.col("_is_active") == "true").count()
+    print(f" {stats['fetched']} fetched | {active_count} active | {soft_delete_count} soft-deleted")
+    return stats
 
 # METADATA ********************
 
@@ -276,8 +262,40 @@ if errors:
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## Execute Load
+
 # CELL ********************
 
+now_utc = datetime.now(timezone.utc).isoformat()
+print(f"[{datetime.now()}] MBTA reference data — incremental merge")
+print(f"Timestamp: {now_utc}")
+print("=" * 60)
+
+all_stats = []
+errors = []
+
+for name, path in ENDPOINTS.items():
+    try:
+        stats = load_endpoint_incremental(name, path, api_key, now_utc)
+        all_stats.append(stats)
+    except Exception as e:
+        errors.append({"endpoint": name, "error": str(e)})
+        print(f" ERROR: {e}")
+    time.sleep(1)
+
+print("=" * 60)
+total_fetched = sum(s["fetched"] for s in all_stats)
+total_deleted = sum(s["soft_deleted"] for s in all_stats)
+print(f"[{datetime.now()}] Complete: {total_fetched} records across {len(all_stats)} endpoints")
+if total_deleted:
+    print(f"  Soft-deleted: {total_deleted} stale records")
+if errors:
+    print(f"\nERRORS ({len(errors)}):")
+    for err in errors:
+        print(f"  {err['endpoint']}: {err['error']}")
+    raise RuntimeError(f"Failed: {[e['endpoint'] for e in errors]}")
 
 # METADATA ********************
 
