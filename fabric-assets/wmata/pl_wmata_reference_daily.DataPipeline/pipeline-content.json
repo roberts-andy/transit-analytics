@@ -10,6 +10,16 @@
             "httpRequestTimeout": "00:01:00",
             "requestInterval": "00.00:00:01.000",
             "requestMethod": "GET",
+            "datasetSettings": {
+              "type": "RestResource",
+              "typeProperties": {
+                "relativeUrl": "/Rail.svc/json/jStations"
+              },
+              "linkedService": {
+                "referenceName": "ls_wmata_rest_api",
+                "type": "LinkedServiceReference"
+              }
+            },
             "additionalHeaders": {
               "api_key": {
                 "type": "Expression",
@@ -21,7 +31,14 @@
           "sink": {
             "type": "LakehouseTableSink",
             "tableActionOption": "Overwrite",
-            "partitionOption": "None"
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "wmata",
+                "table": "stations"
+              }
+            }
           }
         },
         "inputs": [
@@ -56,6 +73,16 @@
             "httpRequestTimeout": "00:01:00",
             "requestInterval": "00.00:00:01.000",
             "requestMethod": "GET",
+            "datasetSettings": {
+              "type": "RestResource",
+              "typeProperties": {
+                "relativeUrl": "/Bus.svc/json/jRoutes"
+              },
+              "linkedService": {
+                "referenceName": "ls_wmata_rest_api",
+                "type": "LinkedServiceReference"
+              }
+            },
             "additionalHeaders": {
               "api_key": {
                 "type": "Expression",
@@ -66,7 +93,14 @@
           "sink": {
             "type": "LakehouseTableSink",
             "tableActionOption": "Overwrite",
-            "partitionOption": "None"
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "wmata",
+                "table": "bus_routes"
+              }
+            }
           }
         },
         "inputs": [
@@ -101,6 +135,16 @@
             "httpRequestTimeout": "00:01:00",
             "requestInterval": "00.00:00:01.000",
             "requestMethod": "GET",
+            "datasetSettings": {
+              "type": "RestResource",
+              "typeProperties": {
+                "relativeUrl": "/Rail.svc/json/jLines"
+              },
+              "linkedService": {
+                "referenceName": "ls_wmata_rest_api",
+                "type": "LinkedServiceReference"
+              }
+            },
             "additionalHeaders": {
               "api_key": {
                 "type": "Expression",
@@ -111,7 +155,14 @@
           "sink": {
             "type": "LakehouseTableSink",
             "tableActionOption": "Overwrite",
-            "partitionOption": "None"
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "wmata",
+                "table": "rail_lines"
+              }
+            }
           }
         },
         "inputs": [
@@ -146,6 +197,16 @@
             "httpRequestTimeout": "00:01:00",
             "requestInterval": "00.00:00:01.000",
             "requestMethod": "GET",
+            "datasetSettings": {
+              "type": "RestResource",
+              "typeProperties": {
+                "relativeUrl": "/Rail.svc/json/jStationEntrances"
+              },
+              "linkedService": {
+                "referenceName": "ls_wmata_rest_api",
+                "type": "LinkedServiceReference"
+              }
+            },
             "additionalHeaders": {
               "api_key": {
                 "type": "Expression",
@@ -156,7 +217,14 @@
           "sink": {
             "type": "LakehouseTableSink",
             "tableActionOption": "Overwrite",
-            "partitionOption": "None"
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "wmata",
+                "table": "station_entrances"
+              }
+            }
           }
         },
         "inputs": [
@@ -191,6 +259,16 @@
             "httpRequestTimeout": "00:01:00",
             "requestInterval": "00.00:00:01.000",
             "requestMethod": "GET",
+            "datasetSettings": {
+              "type": "RestResource",
+              "typeProperties": {
+                "relativeUrl": "/Bus.svc/json/jStops"
+              },
+              "linkedService": {
+                "referenceName": "ls_wmata_rest_api",
+                "type": "LinkedServiceReference"
+              }
+            },
             "additionalHeaders": {
               "api_key": {
                 "type": "Expression",
@@ -201,7 +279,14 @@
           "sink": {
             "type": "LakehouseTableSink",
             "tableActionOption": "Overwrite",
-            "partitionOption": "None"
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "wmata",
+                "table": "bus_stops"
+              }
+            }
           }
         },
         "inputs": [
