@@ -3,6 +3,7 @@
     "description": "Consumes WMATA real-time events from Azure Event Hub and routes them to Bronze lakehouse Delta tables in schema wmata.",
     "source": {
       "type": "AzureEventHub",
+      "referenceName": "src_wmata_realtime_eventhub",
       "properties": {
         "connectionString": "<EVENT_HUB_CONNECTION_STRING>",
         "eventHubName": "wmata-realtime",
@@ -13,6 +14,7 @@
     "destinations": [
       {
         "type": "Lakehouse",
+        "referenceName": "dest_wmata_rail_predictions",
         "properties": {
           "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
           "lakehouseId": "82a4dd04-28a2-4ac4-acab-254953df7edb",
@@ -28,6 +30,7 @@
       },
       {
         "type": "Lakehouse",
+        "referenceName": "dest_wmata_bus_positions",
         "properties": {
           "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
           "lakehouseId": "82a4dd04-28a2-4ac4-acab-254953df7edb",
@@ -43,6 +46,7 @@
       },
       {
         "type": "Lakehouse",
+        "referenceName": "dest_wmata_rail_incidents",
         "properties": {
           "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
           "lakehouseId": "82a4dd04-28a2-4ac4-acab-254953df7edb",
@@ -58,6 +62,7 @@
       },
       {
         "type": "Lakehouse",
+        "referenceName": "dest_wmata_bus_incidents",
         "properties": {
           "workspaceId": "c030c477-6e50-4334-8fcb-fd032f8870b9",
           "lakehouseId": "82a4dd04-28a2-4ac4-acab-254953df7edb",
